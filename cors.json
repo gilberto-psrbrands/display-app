@@ -1,0 +1,7 @@
+[
+  {
+    "origin": ["https://tvdisplay-f1e87.web.app", "https://tvdisplay-f1e87.firebaseapp.com"],
+    "method": ["GET"],
+    "maxAgeSeconds": 3600
+  }
+]

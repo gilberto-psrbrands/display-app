@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamma Forge - Centro de Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="h-full flex items-center justify-center text-white">
+    <!-- Pantalla de Login (oculta por defecto) -->
+    <div id="login-screen" class="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-lg shadow-lg" style="display: none;">
+        <div class="text-center">
+            <img src="https://gammaforge.com/wp-content/uploads/2024/02/gamma_forge_logo_white.svg" alt="Gamma Forge Logo" class="w-48 mx-auto mb-6">
+            <h2 class="text-2xl font-bold">Admin Login</h2>
+        </div>
+        <form id="login-form" class="space-y-6">
+            <div>
+                <label for="email" class="text-sm font-medium">Email</label>
+                <input type="email" id="email" required class="w-full px-4 py-2 mt-1 text-gray-900 bg-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            </div>
+            <div>
+                <label for="password" class="text-sm font-medium">Password</label>
+                <input type="password" id="password" required class="w-full px-4 py-2 mt-1 text-gray-900 bg-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            </div>
+            <button type="submit" class="w-full px-4 py-2 font-semibold text-white bg-cyan-600 rounded-md hover:bg-cyan-700 transition">Sign In</button>
+            <p id="login-error" class="text-sm text-red-500 text-center"></p>
+        </form>
+    </div>
+
+    <!-- Panel de Administración (oculto por defecto) -->
+    <div id="admin-panel" class="w-full h-full p-6 bg-gray-900" style="display: none;">
+        <header class="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
+            <div>
+                <h1 class="text-2xl font-bold text-cyan-400">Broadcast Control Panel</h1>
+                <p id="project-id-display-admin" class="text-xs text-gray-500 font-mono"></p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="user-email" class="text-sm text-gray-400"></span>
+                <button id="logout-button" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition">Logout</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- 1. Subir Contenido -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-xl font-semibold mb-4 border-b border-gray-600 pb-2">1. Subir Nuevo Contenido</h3>
+                <form id="upload-form" class="space-y-4">
+                    <input type="text" id="content-name" placeholder="Nombre del Contenido (ej. Anuncio Q3)" required class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                    <select id="orientation" class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                        <option value="horizontal">Horizontal</option>
+                        <option value="vertical">Vertical</option>
+                    </select>
+                    <input type="number" id="slide-duration" placeholder="Duración de Diapositiva (segundos)" required value="10" class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                    <input type="file" id="pdf-file" accept=".pdf" required class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100">
+                    <button type="submit" class="w-full px-4 py-2 font-semibold text-white bg-cyan-600 rounded-md hover:bg-cyan-700 transition">Subir Contenido</button>
+                    <p id="upload-status" class="text-sm text-center"></p>
+                </form>
+            </div>
+
+            <!-- 2. Administrar Dispositivos -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-xl font-semibold mb-4 border-b border-gray-600 pb-2">2. Administrar Dispositivos</h3>
+                <form id="add-device-form" class="flex items-center space-x-2 mb-4">
+                    <input type="text" id="device-name" placeholder="Nombre (ej. TV Lobby)" required class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                    <button type="submit" class="px-4 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition">Añadir</button>
+                </form>
+                 <p id="device-status" class="text-sm text-center mb-2"></p>
+                <div id="devices-list" class="space-y-3"></div>
+            </div>
+
+            <!-- 3. Librería de Contenido -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-xl font-semibold mb-4 border-b border-gray-600 pb-2">3. Librería de Contenido</h3>
+                <div id="content-list" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Conexión con Firebase ---
+        // TODO: Pega aquí la configuración de tu proyecto de Firebase.
+        // Reemplaza este objeto de ejemplo con tus claves reales.
+        const firebaseConfig = {
+  apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
+  authDomain: "tvdisplay-f1e87.firebaseapp.com",
+  projectId: "tvdisplay-f1e87",
+  storageBucket: "tvdisplay-f1e87.firebasestorage.app",
+  messagingSenderId: "815986988801",
+  appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
+  measurementId: "G-TDD6C4V757"
+};
+        
+        // --- Inicialización de Servicios ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // --- Lógica de la Aplicación ---
+        const loginScreen = document.getElementById('login-screen');
+        const adminPanel = document.getElementById('admin-panel');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const userEmailDisplay = document.getElementById('user-email');
+        const logoutButton = document.getElementById('logout-button');
+        const uploadForm = document.getElementById('upload-form');
+        const uploadStatus = document.getElementById('upload-status');
+        const addDeviceForm = document.getElementById('add-device-form');
+        const deviceStatus = document.getElementById('device-status');
+        const devicesList = document.getElementById('devices-list');
+        const contentList = document.getElementById('content-list');
+        const projectIdDisplayAdmin = document.getElementById('project-id-display-admin');
+        
+        projectIdDisplayAdmin.textContent = `Project ID: ${firebaseConfig.projectId || 'No definido'}`;
+
+        // Control de autenticación
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loginScreen.style.display = 'none';
+                adminPanel.style.display = 'block';
+                userEmailDisplay.textContent = user.email;
+                loadInitialData();
+            } else {
+                loginScreen.style.display = 'block';
+                adminPanel.style.display = 'none';
+            }
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            loginError.textContent = '';
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                console.error("Login error:", error);
+                loginError.textContent = error.message;
+            }
+        });
+
+        logoutButton.addEventListener('click', () => signOut(auth));
+
+        // Subir contenido
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const contentName = document.getElementById('content-name').value.trim().toUpperCase();
+            const orientation = document.getElementById('orientation').value;
+            const slideDuration = document.getElementById('slide-duration').value;
+            const pdfFile = document.getElementById('pdf-file').files[0];
+            
+            if (!contentName || !pdfFile) {
+                uploadStatus.textContent = "Nombre y archivo son requeridos.";
+                return;
+            }
+            uploadStatus.textContent = 'Subiendo archivo...';
+
+            try {
+                const filePath = `pdfs/${Date.now()}_${pdfFile.name}`;
+                const storageRef = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRef, pdfFile);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+
+                await setDoc(doc(db, 'content', contentName), {
+                    name: contentName,
+                    orientation: orientation,
+                    slideDuration: parseInt(slideDuration, 10),
+                    filePath: filePath, // *** CORRECCIÓN IMPORTANTE ***
+                    downloadURL: downloadURL
+                });
+
+                uploadStatus.textContent = `¡Contenido "${contentName}" subido exitosamente!`;
+                uploadForm.reset();
+            } catch (error) {
+                console.error("Upload Error:", error);
+                uploadStatus.textContent = `Error al subir: ${error.message}`;
+            }
+        });
+
+        // Añadir dispositivo
+        addDeviceForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const deviceNameInput = document.getElementById('device-name');
+            const deviceName = deviceNameInput.value.trim().toUpperCase();
+            if (!deviceName) return;
+            try {
+                await setDoc(doc(db, 'devices', deviceName), {
+                    name: deviceName,
+                    assignedContent: null
+                });
+                deviceStatus.textContent = `¡Dispositivo "${deviceName}" añadido!`;
+                addDeviceForm.reset();
+            } catch(error) {
+                console.error("Add device error:", error);
+                deviceStatus.textContent = `Error: ${error.message}`;
+            }
+        });
+        
+        let availableContent = [];
+
+        const renderDevices = (devices) => {
+            devicesList.innerHTML = '';
+            devices.forEach(device => {
+                const deviceEl = document.createElement('div');
+                deviceEl.className = 'bg-gray-700 p-3 rounded-md';
+                const optionsHtml = availableContent.map(c => `<option value="${c.id}" ${device.assignedContent === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+                
+                deviceEl.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold">${device.name}</span>
+                        <button data-device-id="${device.id}" class="delete-device-btn text-red-500 hover:text-red-400">×</button>
+                    </div>
+                    <select data-device-id="${device.id}" class="assign-content-select w-full mt-2 px-2 py-1 text-gray-900 bg-gray-300 rounded-md">
+                        <option value="">-- Sin Asignar --</option>
+                        ${optionsHtml}
+                    </select>
+                `;
+                devicesList.appendChild(deviceEl);
+            });
+        };
+
+        const renderContentList = (content) => {
+            contentList.innerHTML = '';
+            content.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'bg-gray-700 p-3 rounded-md flex justify-between items-center';
+                itemEl.innerHTML = `
+                    <div>
+                        <p class="font-semibold">${item.name}</p>
+                        <p class="text-xs text-gray-400">${item.orientation}</p>
+                    </div>
+                    <button data-content-id="${item.id}" class="delete-content-btn text-red-500 hover:text-red-400">×</button>
+                `;
+                contentList.appendChild(itemEl);
+            });
+        };
+        
+        // Cargar y mostrar datos en tiempo real
+        const loadInitialData = () => {
+            onSnapshot(collection(db, 'content'), (snapshot) => {
+                availableContent = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderContentList(availableContent);
+                // Volver a renderizar dispositivos para actualizar los menús
+                 onSnapshot(collection(db, 'devices'), (snapshot) => {
+                    const devices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderDevices(devices);
+                });
+            });
+        };
+
+        // Delegación de eventos para botones de borrado y asignación
+        devicesList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('delete-device-btn')) {
+                const deviceId = e.target.dataset.deviceId;
+                if (confirm(`¿Seguro que quieres eliminar el dispositivo "${deviceId}"?`)) {
+                    await deleteDoc(doc(db, 'devices', deviceId));
+                }
+            }
+        });
+        
+        devicesList.addEventListener('change', async (e) => {
+             if (e.target.classList.contains('assign-content-select')) {
+                const deviceId = e.target.dataset.deviceId;
+                const contentId = e.target.value || null;
+                await setDoc(doc(db, 'devices', deviceId), { assignedContent: contentId }, { merge: true });
+            }
+        });
+
+        contentList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('delete-content-btn')) {
+                const contentId = e.target.dataset.contentId;
+                 if (confirm(`¿Seguro que quieres eliminar el contenido "${contentId}"?`)) {
+                    await deleteDoc(doc(db, 'content', contentId));
+                    // TODO: También eliminar el archivo de Storage
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
