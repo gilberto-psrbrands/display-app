@@ -6,9 +6,6 @@
     <title>Display</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
-    </script>
     <style>
         body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
         #viewer-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; }
@@ -26,7 +23,7 @@
         }
     </style>
 </head>
-<body>
+<body class="flex items-center justify-center">
     <div id="viewer-container">
         <p id="status-message">Inicializando Dispositivo...</p>
         <canvas id="pdf-canvas"></canvas>
@@ -34,22 +31,27 @@
     <div id="project-id-display-display"></div>
 
     <script type="module">
+        // --- Conexión con Firebase ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
+  authDomain: "tvdisplay-f1e87.firebaseapp.com",
+  projectId: "tvdisplay-f1e87",
+  storageBucket: "tvdisplay-f1e87.firebasestorage.app",
+  messagingSenderId: "815986988801",
+  appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
+  measurementId: "G-TDD6C4V757"
+};
+        
+        // --- Inicialización de Servicios ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
-            authDomain: "tvdisplay-f1e87.firebaseapp.com",
-            projectId: "tvdisplay-f1e87",
-            storageBucket: "tvdisplay-f1e87.firebasestorage.app",
-            messagingSenderId: "815986988801",
-            appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
-            measurementId: "G-TDD6C4V757"
-        };
-        
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const functions = getFunctions(app);
         
+        // --- Lógica de la Aplicación ---
         const viewerContainer = document.getElementById('viewer-container');
         const statusMessage = document.getElementById('status-message');
         const canvas = document.getElementById('pdf-canvas');
@@ -60,7 +62,7 @@
         let currentPage = 1;
         let slideInterval = null;
 
-        projectIdDisplay.textContent = `Project ID: ${firebaseConfig.projectId}`;
+        projectIdDisplay.textContent = `Project ID: ${firebaseConfig.projectId || 'No definido'}`;
 
         const getDeviceNameFromURL = () => {
             const params = new URLSearchParams(window.location.search);
@@ -92,11 +94,9 @@
         };
 
         const renderContent = async (contentData) => {
-            console.log("=== DIRECT PDF LOAD DEBUG ===");
-            console.log("contentData received:", contentData);
-            
-            if (!contentData?.downloadURL) {
-                statusMessage.textContent = 'Contenido no asignado.';
+            if (!contentData || !contentData.filePath) {
+                statusMessage.textContent = 'Contenido no asignado o no encontrado.';
+                viewerContainer.classList.remove('rotate-vertical');
                 canvas.style.display = 'none';
                 return;
             }
@@ -112,11 +112,30 @@
             }
 
             try {
-                console.log("Loading PDF directly from URL:", contentData.downloadURL);
-                const loadingTask = pdfjsLib.getDocument(contentData.downloadURL);
+                // Debug: Verificar datos del contenido
+                console.log('Content data:', contentData);
+                console.log('File path:', contentData.filePath);
+                console.log('Download URL:', contentData.downloadURL);
+                
+                if (!contentData.downloadURL) {
+                    throw new Error('No se encontró downloadURL en el contenido');
+                }
+                
+                // SOLUCIÓN ALTERNATIVA: Usar downloadURL directamente en lugar de Cloud Function
+                statusMessage.textContent = 'Descargando PDF...';
+                console.log('Downloading PDF from:', contentData.downloadURL);
+                
+                const response = await fetch(contentData.downloadURL);
+                if (!response.ok) {
+                    throw new Error(`Error al descargar PDF: ${response.status}`);
+                }
+                
+                const pdfArrayBuffer = await response.arrayBuffer();
+                console.log('PDF downloaded, size:', pdfArrayBuffer.byteLength, 'bytes');
+                
+                const loadingTask = pdfjsLib.getDocument(pdfArrayBuffer);
                 pdfDoc = await loadingTask.promise;
                 
-                console.log("PDF loaded successfully, pages:", pdfDoc.numPages);
                 statusMessage.textContent = '';
                 canvas.style.display = 'block';
                 currentPage = 1;
@@ -124,37 +143,51 @@
                 startSlideshow(contentData.slideDuration || 10);
 
             } catch (error) {
-                console.error("Error loading PDF:", error);
-                statusMessage.textContent = 'Error al cargar el PDF.';
+                console.error("Error al cargar PDF:", error);
+                statusMessage.textContent = `Error al cargar el PDF. (Detalle: ${error.message})`;
+                canvas.style.display = 'none';
             }
         };
 
         const listenForDeviceChanges = (deviceName) => {
-            statusMessage.textContent = `Buscando "${deviceName}"...`;
-            const deviceRef = doc(db, 'devices', deviceName.toUpperCase());
+            statusMessage.textContent = `Buscando configuración para "${deviceName}"...`;
+            
+            // CORRECCIÓN: Convertir a mayúsculas para buscar en Firebase
+            const deviceId = deviceName.toUpperCase();
+            
+            // Agregar diagnóstico para debug
+            console.log("Device name from URL:", deviceName);
+            console.log("Device ID (uppercase):", deviceId);
+            
+            const deviceRef = doc(db, 'devices', deviceId);
 
             onSnapshot(deviceRef, (deviceSnap) => {
                 if (!deviceSnap.exists()) {
-                    statusMessage.textContent = `Dispositivo "${deviceName}" no encontrado.`;
+                    statusMessage.textContent = `Dispositivo "${deviceName}" (buscado como "${deviceId}") no encontrado.`;
+                    console.log("Device document does not exist:", deviceId);
                     return;
                 }
                 
+                console.log("Device found:", deviceSnap.data());
                 const deviceData = deviceSnap.data();
                 const contentId = deviceData.assignedContent;
 
                 if (!contentId) {
-                    statusMessage.textContent = 'Dispositivo en espera.';
+                    statusMessage.textContent = 'Dispositivo en espera. Asigna contenido desde el panel.';
                     if (slideInterval) clearInterval(slideInterval);
                     canvas.style.display = 'none';
                     return;
                 }
 
+                console.log("Content assigned:", contentId);
                 const contentRef = doc(db, 'content', contentId);
                 onSnapshot(contentRef, (contentSnap) => {
                     if (contentSnap.exists()) {
+                        console.log("Content data:", contentSnap.data());
                         renderContent(contentSnap.data());
                     } else {
-                        statusMessage.textContent = 'Contenido no encontrado.';
+                        statusMessage.textContent = 'El contenido asignado ya no existe.';
+                        console.log("Content document does not exist:", contentId);
                     }
                 });
             });
@@ -164,7 +197,7 @@
         if (deviceName) {
             listenForDeviceChanges(deviceName);
         } else {
-            statusMessage.textContent = 'Error: Dispositivo no especificado.';
+            statusMessage.textContent = 'Error: Nombre de dispositivo no especificado en la URL.';
         }
     </script>
 </body>

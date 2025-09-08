@@ -13,7 +13,7 @@
     </style>
 </head>
 <body class="h-full flex items-center justify-center text-white">
-    <!-- Pantalla de Login (oculta por defecto) -->
+    <!-- Pantalla de Login -->
     <div id="login-screen" class="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-lg shadow-lg" style="display: none;">
         <div class="text-center">
             <img src="https://gammaforge.com/wp-content/uploads/2024/02/gamma_forge_logo_white.svg" alt="Gamma Forge Logo" class="w-48 mx-auto mb-6">
@@ -33,7 +33,7 @@
         </form>
     </div>
 
-    <!-- Panel de Administración (oculto por defecto) -->
+    <!-- Panel de Administración -->
     <div id="admin-panel" class="w-full h-full p-6 bg-gray-900" style="display: none;">
         <header class="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
             <div>
@@ -47,11 +47,16 @@
         </header>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- 1. Subir Contenido -->
+            <!-- 1. Subir Nuevo Contenido -->
             <div class="bg-gray-800 p-6 rounded-lg">
                 <h3 class="text-xl font-semibold mb-4 border-b border-gray-600 pb-2">1. Subir Nuevo Contenido</h3>
                 <form id="upload-form" class="space-y-4">
                     <input type="text" id="content-name" placeholder="Nombre del Contenido (ej. Anuncio Q3)" required class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                    <select id="content-level" class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                        <option value="Content-Publico">Content-Publico (Todos los dispositivos)</option>
+                        <option value="Content-Management">Content-Management (Dispositivos Management y Privado)</option>
+                        <option value="Content-Privado">Content-Privado (Solo dispositivos Privado)</option>
+                    </select>
                     <select id="orientation" class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
                         <option value="horizontal">Horizontal</option>
                         <option value="vertical">Vertical</option>
@@ -68,9 +73,15 @@
                 <h3 class="text-xl font-semibold mb-4 border-b border-gray-600 pb-2">2. Administrar Dispositivos</h3>
                 <form id="add-device-form" class="flex items-center space-x-2 mb-4">
                     <input type="text" id="device-name" placeholder="Nombre (ej. TV Lobby)" required class="w-full px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                    <select id="device-level" class="px-3 py-2 text-gray-900 bg-gray-300 rounded-md">
+                        <option value="Display-Planta">Display-Planta</option>
+                        <option value="Display-Management">Display-Management</option>
+                        <option value="Display-Privado">Display-Privado</option>
+                    </select>
                     <button type="submit" class="px-4 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition">Añadir</button>
                 </form>
-                 <p id="device-status" class="text-sm text-center mb-2"></p>
+                <p id="device-status" class="text-sm text-center mb-2"></p>
+                <p id="assignment-status" class="text-sm text-center mb-2 text-blue-400"></p>
                 <div id="devices-list" class="space-y-3"></div>
             </div>
 
@@ -84,22 +95,20 @@
 
     <script type="module">
         // --- Conexión con Firebase ---
-        // TODO: Pega aquí la configuración de tu proyecto de Firebase.
-        // Reemplaza este objeto de ejemplo con tus claves reales.
         const firebaseConfig = {
-  apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
-  authDomain: "tvdisplay-f1e87.firebaseapp.com",
-  projectId: "tvdisplay-f1e87",
-  storageBucket: "tvdisplay-f1e87.firebasestorage.app",
-  messagingSenderId: "815986988801",
-  appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
-  measurementId: "G-TDD6C4V757"
-};
+            apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
+            authDomain: "tvdisplay-f1e87.firebaseapp.com",
+            projectId: "tvdisplay-f1e87",
+            storageBucket: "tvdisplay-f1e87.firebasestorage.app",
+            messagingSenderId: "815986988801",
+            appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
+            measurementId: "G-TDD6C4V757"
+        };
         
         // --- Inicialización de Servicios ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
         const app = initializeApp(firebaseConfig);
@@ -107,7 +116,7 @@
         const db = getFirestore(app);
         const storage = getStorage(app);
 
-        // --- Lógica de la Aplicación ---
+        // --- Elementos del DOM ---
         const loginScreen = document.getElementById('login-screen');
         const adminPanel = document.getElementById('admin-panel');
         const loginForm = document.getElementById('login-form');
@@ -118,11 +127,14 @@
         const uploadStatus = document.getElementById('upload-status');
         const addDeviceForm = document.getElementById('add-device-form');
         const deviceStatus = document.getElementById('device-status');
+        const assignmentStatus = document.getElementById('assignment-status');
         const devicesList = document.getElementById('devices-list');
         const contentList = document.getElementById('content-list');
         const projectIdDisplayAdmin = document.getElementById('project-id-display-admin');
         
         projectIdDisplayAdmin.textContent = `Project ID: ${firebaseConfig.projectId || 'No definido'}`;
+
+        let availableContent = [];
 
         // Control de autenticación
         onAuthStateChanged(auth, (user) => {
@@ -156,6 +168,7 @@
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const contentName = document.getElementById('content-name').value.trim().toUpperCase();
+            const contentLevel = document.getElementById('content-level').value;
             const orientation = document.getElementById('orientation').value;
             const slideDuration = document.getElementById('slide-duration').value;
             const pdfFile = document.getElementById('pdf-file').files[0];
@@ -174,9 +187,10 @@
 
                 await setDoc(doc(db, 'content', contentName), {
                     name: contentName,
+                    contentLevel: contentLevel,
                     orientation: orientation,
                     slideDuration: parseInt(slideDuration, 10),
-                    filePath: filePath, // *** CORRECCIÓN IMPORTANTE ***
+                    filePath: filePath,
                     downloadURL: downloadURL
                 });
 
@@ -192,11 +206,13 @@
         addDeviceForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const deviceNameInput = document.getElementById('device-name');
+            const deviceLevel = document.getElementById('device-level').value;
             const deviceName = deviceNameInput.value.trim().toUpperCase();
             if (!deviceName) return;
             try {
                 await setDoc(doc(db, 'devices', deviceName), {
                     name: deviceName,
+                    deviceLevel: deviceLevel.replace('Display-', ''), // Guarda solo "Planta", "Management", "Privado"
                     assignedContent: null
                 });
                 deviceStatus.textContent = `¡Dispositivo "${deviceName}" añadido!`;
@@ -206,19 +222,45 @@
                 deviceStatus.textContent = `Error: ${error.message}`;
             }
         });
-        
-        let availableContent = [];
 
         const renderDevices = (devices) => {
             devicesList.innerHTML = '';
             devices.forEach(device => {
                 const deviceEl = document.createElement('div');
                 deviceEl.className = 'bg-gray-700 p-3 rounded-md';
-                const optionsHtml = availableContent.map(c => `<option value="${c.id}" ${device.assignedContent === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+                
+                // Filtrar contenido según el nivel del dispositivo
+                const deviceLevel = device.deviceLevel || 'Planta';
+                const compatibleContent = availableContent.filter(c => {
+                    const contentLevel = c.contentLevel || 'Content-Publico';
+                    
+                    if (deviceLevel === 'Privado') {
+                        return true; // Privado puede ver todo
+                    } else if (deviceLevel === 'Management') {
+                        return contentLevel === 'Content-Publico' || contentLevel === 'Content-Management';
+                    } else { // deviceLevel === 'Planta'
+                        return contentLevel === 'Content-Publico';
+                    }
+                });
+                
+                const optionsHtml = compatibleContent.map(c => 
+                    `<option value="${c.id}" ${device.assignedContent === c.id ? 'selected' : ''}>${c.name}</option>`
+                ).join('');
+                
+                const levelBadge = (() => {
+                    switch(deviceLevel) {
+                        case 'Privado': return '<span class="bg-red-500 text-white text-xs px-2 py-1 rounded font-semibold">PRIVADO</span>';
+                        case 'Management': return '<span class="bg-yellow-500 text-black text-xs px-2 py-1 rounded font-semibold">MANAGEMENT</span>';
+                        default: return '<span class="bg-green-500 text-white text-xs px-2 py-1 rounded font-semibold">PLANTA</span>';
+                    }
+                })();
                 
                 deviceEl.innerHTML = `
                     <div class="flex justify-between items-center">
-                        <span class="font-semibold">${device.name}</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-semibold">${device.name}</span>
+                            ${levelBadge}
+                        </div>
                         <button data-device-id="${device.id}" class="delete-device-btn text-red-500 hover:text-red-400">×</button>
                     </div>
                     <select data-device-id="${device.id}" class="assign-content-select w-full mt-2 px-2 py-1 text-gray-900 bg-gray-300 rounded-md">
@@ -235,9 +277,22 @@
             content.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.className = 'bg-gray-700 p-3 rounded-md flex justify-between items-center';
+                
+                const levelBadge = (() => {
+                    const contentLevel = item.contentLevel || 'Content-Publico';
+                    switch(contentLevel) {
+                        case 'Content-Privado': return '<span class="bg-red-500 text-white text-xs px-2 py-1 rounded font-semibold">PRIVADO</span>';
+                        case 'Content-Management': return '<span class="bg-yellow-500 text-black text-xs px-2 py-1 rounded font-semibold">MANAGEMENT</span>';
+                        default: return '<span class="bg-green-500 text-white text-xs px-2 py-1 rounded font-semibold">PUBLICO</span>';
+                    }
+                })();
+                
                 itemEl.innerHTML = `
                     <div>
-                        <p class="font-semibold">${item.name}</p>
+                        <div class="flex items-center space-x-2">
+                            <p class="font-semibold">${item.name}</p>
+                            ${levelBadge}
+                        </div>
                         <p class="text-xs text-gray-400">${item.orientation}</p>
                     </div>
                     <button data-content-id="${item.id}" class="delete-content-btn text-red-500 hover:text-red-400">×</button>
@@ -248,45 +303,83 @@
         
         // Cargar y mostrar datos en tiempo real
         const loadInitialData = () => {
+            // Cargar contenido
             onSnapshot(collection(db, 'content'), (snapshot) => {
                 availableContent = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderContentList(availableContent);
-                // Volver a renderizar dispositivos para actualizar los menús
-                 onSnapshot(collection(db, 'devices'), (snapshot) => {
+                
+                // Cargar dispositivos después de que el contenido esté listo
+                onSnapshot(collection(db, 'devices'), (snapshot) => {
                     const devices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     renderDevices(devices);
                 });
             });
         };
 
-        // Delegación de eventos para botones de borrado y asignación
+        // EVENTO CORREGIDO: Delegación de eventos para asignación de contenido
+        devicesList.addEventListener('change', async (e) => {
+            if (e.target.classList.contains('assign-content-select')) {
+                const deviceId = e.target.dataset.deviceId;
+                const contentId = e.target.value || null;
+                
+                console.log('Assigning content:', { deviceId, contentId });
+                assignmentStatus.textContent = `Asignando contenido a ${deviceId}...`;
+                
+                try {
+                    // CORRECCIÓN: Usar setDoc con merge para asegurar que funcione
+                    const deviceRef = doc(db, 'devices', deviceId);
+                    await setDoc(deviceRef, {
+                        assignedContent: contentId
+                    }, { merge: true });
+                    
+                    assignmentStatus.textContent = `¡Contenido asignado exitosamente a ${deviceId}!`;
+                    console.log('Content assigned successfully');
+                    
+                    // Limpiar el mensaje después de 3 segundos
+                    setTimeout(() => {
+                        assignmentStatus.textContent = '';
+                    }, 3000);
+                    
+                } catch (error) {
+                    console.error("Error assigning content:", error);
+                    assignmentStatus.textContent = `Error al asignar contenido: ${error.message}`;
+                    
+                    // Mostrar el error también en device-status
+                    deviceStatus.textContent = `Error crítico: ${error.message}`;
+                }
+            }
+        });
+
+        // Eliminar dispositivo
         devicesList.addEventListener('click', async (e) => {
             if (e.target.classList.contains('delete-device-btn')) {
                 const deviceId = e.target.dataset.deviceId;
                 if (confirm(`¿Seguro que quieres eliminar el dispositivo "${deviceId}"?`)) {
-                    await deleteDoc(doc(db, 'devices', deviceId));
+                    try {
+                        await deleteDoc(doc(db, 'devices', deviceId));
+                        deviceStatus.textContent = `Dispositivo ${deviceId} eliminado.`;
+                    } catch (error) {
+                        console.error("Delete device error:", error);
+                        deviceStatus.textContent = `Error al eliminar: ${error.message}`;
+                    }
                 }
             }
         });
-        
-        devicesList.addEventListener('change', async (e) => {
-             if (e.target.classList.contains('assign-content-select')) {
-                const deviceId = e.target.dataset.deviceId;
-                const contentId = e.target.value || null;
-                await setDoc(doc(db, 'devices', deviceId), { assignedContent: contentId }, { merge: true });
-            }
-        });
 
+        // Eliminar contenido
         contentList.addEventListener('click', async (e) => {
             if (e.target.classList.contains('delete-content-btn')) {
                 const contentId = e.target.dataset.contentId;
-                 if (confirm(`¿Seguro que quieres eliminar el contenido "${contentId}"?`)) {
-                    await deleteDoc(doc(db, 'content', contentId));
-                    // TODO: También eliminar el archivo de Storage
+                if (confirm(`¿Seguro que quieres eliminar el contenido "${contentId}"?`)) {
+                    try {
+                        await deleteDoc(doc(db, 'content', contentId));
+                        // TODO: También eliminar el archivo de Storage
+                    } catch (error) {
+                        console.error("Delete content error:", error);
+                    }
                 }
             }
         });
     </script>
 </body>
 </html>
-
