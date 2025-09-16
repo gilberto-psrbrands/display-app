@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-black">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Info - Información del Dispositivo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .device-info-card {
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #00ff00;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px auto;
+            font-family: monospace;
+            font-size: 14px;
+            max-width: 600px;
+            color: white;
+        }
+        .device-info-title {
+            color: #00ff00;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 15px;
+            text-align: center;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .fingerprint-hash {
+            background: #333;
+            border: 2px solid #00ff00;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            text-align: center;
+            color: #00ff00;
+            font-weight: bold;
+            font-size: 20px;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+        .info-label {
+            color: #00ff00;
+            font-weight: bold;
+            min-width: 150px;
+        }
+        .info-value {
+            color: #ffffff;
+            text-align: right;
+            flex: 1;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body class="h-full flex items-center justify-center text-white bg-black">
+    
+    <div class="device-info-card">
+        <div class="device-info-title">📱 Información del Dispositivo</div>
+        <div id="fingerprint-hash" class="fingerprint-hash">Generando...</div>
+        <div id="device-details"></div>
+    </div>
+
+    <div style="position: absolute; bottom: 10px; left: 10px; color: rgba(255,255,255,0.2); font-family: monospace; font-size: 10px;">
+        Project ID: tvdisplay-f1e87 - TEST VERSION
+    </div>
+
+    <script>
+        // Variables globales
+        const fingerprintHashDiv = document.getElementById('fingerprint-hash');
+        const deviceDetailsDiv = document.getElementById('device-details');
+
+        // Algoritmo de fingerprinting
+        function generateDeviceFingerprint() {
+            try {
+                const fingerprintData = [];
+                const deviceInfo = [];
+                
+                // 1. User Agent
+                const userAgent = (navigator.userAgent || 'unknown').substring(0, 100);
+                fingerprintData.push('ua:' + userAgent);
+                deviceInfo.push({label: 'User Agent', value: userAgent});
+                
+                // 2. Idioma
+                const language = (navigator.language || navigator.userLanguage || 'unknown').split(',')[0].trim();
+                fingerprintData.push('lang:' + language);
+                deviceInfo.push({label: 'Idioma', value: language});
+                
+                // 3. Plataforma
+                const platform = navigator.platform || 'unknown';
+                fingerprintData.push('platform:' + platform);
+                deviceInfo.push({label: 'Plataforma', value: platform});
+                
+                // 4. Zona horaria
+                const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+                fingerprintData.push('tz:' + timeZone);
+                deviceInfo.push({label: 'Zona Horaria', value: timeZone});
+                
+                // 5. Resolución de pantalla
+                const screenRes = (screen.width || 0) + 'x' + (screen.height || 0);
+                fingerprintData.push('screen:' + screenRes);
+                deviceInfo.push({label: 'Resolución', value: screenRes});
+                
+                // 6. Resolución disponible
+                const availRes = (screen.availWidth || screen.width || 0) + 'x' + (screen.availHeight || screen.height || 0);
+                fingerprintData.push('avail:' + availRes);
+                deviceInfo.push({label: 'Resolución Disponible', value: availRes});
+                
+                // 7. Profundidad de color
+                const colorDepth = screen.colorDepth || 24;
+                fingerprintData.push('color:' + colorDepth);
+                deviceInfo.push({label: 'Profundidad de Color', value: colorDepth + ' bits'});
+                
+                // 8. CPU Cores
+                const cores = navigator.hardwareConcurrency || 1;
+                fingerprintData.push('cores:' + cores);
+                deviceInfo.push({label: 'Núcleos CPU', value: cores});
+                
+                // 9. Memoria del dispositivo
+                const memory = navigator.deviceMemory || 'unknown';
+                fingerprintData.push('memory:' + memory);
+                deviceInfo.push({label: 'Memoria RAM', value: memory + (typeof memory === 'number' ? 'GB' : '')});
+                
+                // 10. Cookies
+                const cookies = navigator.cookieEnabled ? 'yes' : 'no';
+                fingerprintData.push('cookies:' + cookies);
+                deviceInfo.push({label: 'Cookies Habilitadas', value: navigator.cookieEnabled ? 'Sí' : 'No'});
+                
+                // Generar hash final
+                const fingerprintString = fingerprintData.join('|');
+                const finalHash = deterministicHash(fingerprintString);
+                
+                // Actualizar UI
+                fingerprintHashDiv.textContent = finalHash;
+                
+                let html = '';
+                deviceInfo.forEach(item => {
+                    html += `
+                        <div class="info-item">
+                            <div class="info-label">${item.label}:</div>
+                            <div class="info-value">${item.value}</div>
+                        </div>
+                    `;
+                });
+                deviceDetailsDiv.innerHTML = html;
+                
+                console.log('=== DEVICE FINGERPRINT ===');
+                console.log('Raw data:', fingerprintString);
+                console.log('Final hash:', finalHash);
+                
+                return finalHash;
+                
+            } catch (error) {
+                console.error('Error generating fingerprint:', error);
+                fingerprintHashDiv.textContent = 'Error';
+                return 'error';
+            }
+        }
+        
+        // Función de hash
+        function deterministicHash(str) {
+            let hash = 5381;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) + hash) + str.charCodeAt(i);
+                hash = hash >>> 0;
+            }
+            return hash.toString(16);
+        }
+
+        // Generar fingerprint al cargar
+        generateDeviceFingerprint();
+        
+    </script>
+</body>
+</html>

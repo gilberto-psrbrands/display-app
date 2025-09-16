@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-black">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display Secure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
+        #viewer-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        #pdf-canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+        #status-message { color: white; font-size: 2rem; font-family: sans-serif; text-align: center; margin: 20px; }
+        #project-id-display { position: absolute; bottom: 10px; left: 10px; color: rgba(255,255,255,0.2); font-family: monospace; font-size: 10px; }
+        .rotate-vertical {
+            transform-origin: center center;
+            width: 100vh;
+            height: 100vw;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-50%) rotate(90deg);
+        }
+        
+        /* Unauthorized Device Screen */
+        .unauthorized-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        
+        .unauthorized-content {
+            text-align: center;
+            color: white;
+            max-width: 600px;
+            padding: 40px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 20px;
+            border: 2px solid #ff4757;
+            box-shadow: 0 0 30px rgba(255,71,87,0.3);
+        }
+        
+        .unauthorized-icon {
+            font-size: 4rem;
+            color: #ff4757;
+            margin-bottom: 20px;
+        }
+        
+        .unauthorized-title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ff4757;
+            margin-bottom: 20px;
+        }
+        
+        .unauthorized-message {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .fingerprint-info {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 1rem;
+        }
+        
+        .fingerprint-current {
+            color: #ff4757;
+            font-weight: bold;
+        }
+        
+        .fingerprint-expected {
+            color: #5cb85c;
+            font-weight: bold;
+        }
+        
+        .project-info {
+            color: #ffc107;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        
+        .instructions {
+            background: rgba(255,193,7,0.2);
+            border: 1px solid #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        /* Animation for unauthorized screen */
+        .pulse-red {
+            animation: pulseRed 2s infinite;
+        }
+        
+        @keyframes pulseRed {
+            0%, 100% { 
+                box-shadow: 0 0 30px rgba(255,71,87,0.3);
+            }
+            50% { 
+                box-shadow: 0 0 50px rgba(255,71,87,0.6);
+            }
+        }
+        
+        #pairing-info {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            font-family: sans-serif;
+        }
+        .waiting-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center">
+    
+    <!-- Unauthorized Device Screen (hidden by default) -->
+    <div id="unauthorized-screen" class="unauthorized-screen" style="display: none;">
+        <div class="unauthorized-content pulse-red">
+            <div class="unauthorized-icon">🚫</div>
+            <h1 class="unauthorized-title">Dispositivo No Autorizado</h1>
+            <p class="unauthorized-message">Este dispositivo no está autorizado para acceder</p>
+            
+            <div class="fingerprint-info">
+                <div>Fingerprint actual: <span class="fingerprint-current" id="current-fingerprint">Generando...</span></div>
+                <div>Fingerprint esperado: <span class="fingerprint-expected" id="expected-fingerprint">Cargando...</span></div>
+            </div>
+            
+            <div class="instructions">
+                Para acceder, use este contenido desde el dispositivo autorizado o vuelva a emparejar este dispositivo correctamente
+            </div>
+            
+            <div class="project-info">
+                <span id="project-id-secure">Project ID: tvdisplay-f1e87 - SECURE MODE</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="viewer-container">
+        <p id="status-message">Inicializando Dispositivo...</p>
+        <canvas id="pdf-canvas"></canvas>
+    </div>
+    
+    <!-- Pantalla de dispositivo en espera (no emparejado) -->
+    <div id="pairing-info" class="hidden">
+        <div class="waiting-animation">
+            <h1 class="text-4xl font-bold mb-4">Dispositivo en espera</h1>
+            <p class="text-xl mb-6">Este dispositivo requiere emparejamiento</p>
+            <div class="text-gray-400">
+                <p class="mb-2">Para emparejar este dispositivo:</p>
+                <p class="mb-1">1. Vaya al panel de administración</p>
+                <p class="mb-1">2. Genere un código de emparejamiento</p>
+                <p class="mb-4">3. Visite: <span class="text-cyan-400">tvdisplay-f1e87.web.app/tv-pair-secure.html</span></p>
+            </div>
+            <p id="device-id-display" class="text-sm text-gray-500 mt-8"></p>
+        </div>
+    </div>
+    
+    <div id="project-id-display"></div>
+
+    <script type="module">
+        // --- Conexión con Firebase ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
+            authDomain: "tvdisplay-f1e87.firebaseapp.com",
+            projectId: "tvdisplay-f1e87",
+            storageBucket: "tvdisplay-f1e87.firebasestorage.app",
+            messagingSenderId: "815986988801",
+            appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
+            measurementId: "G-TDD6C4V757"
+        };
+        
+        // --- Inicialización de Servicios ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const functions = getFunctions(app);
+        
+        // --- Variables globales ---
+        const viewerContainer = document.getElementById('viewer-container');
+        const statusMessage = document.getElementById('status-message');
+        const canvas = document.getElementById('pdf-canvas');
+        const ctx = canvas.getContext('2d');
+        const projectIdDisplay = document.getElementById('project-id-display');
+        const pairingInfo = document.getElementById('pairing-info');
+        const deviceIdDisplay = document.getElementById('device-id-display');
+        const unauthorizedScreen = document.getElementById('unauthorized-screen');
+        const currentFingerprintSpan = document.getElementById('current-fingerprint');
+        const expectedFingerprintSpan = document.getElementById('expected-fingerprint');
+
+        let pdfDoc = null;
+        let currentPage = 1;
+        let slideInterval = null;
+        let deviceFingerprint = null;
+
+        projectIdDisplay.textContent = `Project ID: ${firebaseConfig.projectId || 'No definido'} - SECURE MODE`;
+
+        // ===== ALGORITMO DE FINGERPRINTING UNIFICADO Y DETERMINÍSTICO =====
+        function generateDeviceFingerprint() {
+            try {
+                const fingerprintData = [];
+                
+                // 1. User Agent (primeros 100 caracteres para consistencia)
+                const userAgent = (navigator.userAgent || 'unknown').substring(0, 100);
+                fingerprintData.push('ua:' + userAgent);
+                
+                // 2. Idioma principal (solo primer idioma)
+                const language = (navigator.language || navigator.userLanguage || 'unknown').split(',')[0].trim();
+                fingerprintData.push('lang:' + language);
+                
+                // 3. Plataforma
+                const platform = navigator.platform || 'unknown';
+                fingerprintData.push('platform:' + platform);
+                
+                // 4. Zona horaria
+                const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+                fingerprintData.push('tz:' + timeZone);
+                
+                // 5. Resolución de pantalla (solo dimensiones principales)
+                const screenRes = (screen.width || 0) + 'x' + (screen.height || 0);
+                fingerprintData.push('screen:' + screenRes);
+                
+                // 6. Resolución disponible (consistente)
+                const availRes = (screen.availWidth || screen.width || 0) + 'x' + (screen.availHeight || screen.height || 0);
+                fingerprintData.push('avail:' + availRes);
+                
+                // 7. Profundidad de color (valor por defecto si no existe)
+                const colorDepth = screen.colorDepth || 24;
+                fingerprintData.push('color:' + colorDepth);
+                
+                // 8. CPU Cores (consistente)
+                const cores = navigator.hardwareConcurrency || 1;
+                fingerprintData.push('cores:' + cores);
+                
+                // 9. Memoria del dispositivo (consistente con valor por defecto)
+                const memory = navigator.deviceMemory || 'unknown';
+                fingerprintData.push('memory:' + memory);
+                
+                // 10. Cookies (simple boolean)
+                const cookies = navigator.cookieEnabled ? 'yes' : 'no';
+                fingerprintData.push('cookies:' + cookies);
+                
+                // Generar hash final
+                const fingerprintString = fingerprintData.join('|');
+                const finalHash = deterministicHash(fingerprintString);
+                
+                console.log('=== DEVICE FINGERPRINT SECURE UNIFIED ===');
+                console.log('Raw data:', fingerprintString);
+                console.log('Final hash:', finalHash);
+                
+                return finalHash;
+                
+            } catch (error) {
+                console.error('Error generating fingerprint:', error);
+                return 'error-' + Date.now();
+            }
+        }
+        
+        // Función de hash completamente determinística
+        function deterministicHash(str) {
+            let hash = 5381; // Usar DJB2 hash algorithm para consistencia
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) + hash) + str.charCodeAt(i); // hash * 33 + c
+                hash = hash >>> 0; // Convertir a unsigned 32-bit integer
+            }
+            return hash.toString(16);
+        }
+        
+        // --- FUNCIONES DE UI ---
+        const getDeviceNameFromURL = () => {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('device');
+        };
+
+        const showUnauthorizedScreen = (currentFingerprint, expectedFingerprint) => {
+            console.log("=== SHOWING UNAUTHORIZED SCREEN ===");
+            console.log("Current fingerprint:", currentFingerprint);
+            console.log("Expected fingerprint:", expectedFingerprint);
+            
+            currentFingerprintSpan.textContent = currentFingerprint;
+            expectedFingerprintSpan.textContent = expectedFingerprint;
+            
+            // Ocultar todo lo demás
+            viewerContainer.style.display = 'none';
+            pairingInfo.classList.add('hidden');
+            
+            // Mostrar pantalla de no autorizado
+            unauthorizedScreen.style.display = 'flex';
+        };
+
+        const hideUnauthorizedScreen = () => {
+            unauthorizedScreen.style.display = 'none';
+        };
+
+        const showPairingScreen = (deviceId) => {
+            console.log("=== SWITCHING TO PAIRING SCREEN ===");
+            
+            hideUnauthorizedScreen();
+            
+            if (slideInterval) {
+                clearInterval(slideInterval);
+                slideInterval = null;
+            }
+            
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            canvas.style.display = 'none';
+            
+            pdfDoc = null;
+            currentPage = 1;
+            
+            viewerContainer.style.display = 'none';
+            pairingInfo.classList.remove('hidden');
+            deviceIdDisplay.textContent = `Dispositivo: ${deviceId}`;
+        };
+
+        const hidePairingScreen = () => {
+            pairingInfo.classList.add('hidden');
+            viewerContainer.style.display = 'flex';
+        };
+
+        const renderPage = async (num) => {
+            if (!pdfDoc) return;
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: 2.0 });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+            };
+            await page.render(renderContext).promise;
+        };
+
+        const startSlideshow = (durationSeconds) => {
+            if (slideInterval) clearInterval(slideInterval);
+            if (!pdfDoc || pdfDoc.numPages <= 1) return;
+
+            slideInterval = setInterval(() => {
+                currentPage = (currentPage % pdfDoc.numPages) + 1;
+                renderPage(currentPage);
+            }, durationSeconds * 1000);
+        };
+
+        const renderContent = async (contentData) => {
+            if (!contentData || (!contentData.downloadURL && !contentData.filePath)) {
+                statusMessage.textContent = 'Contenido no asignado o no encontrado.';
+                canvas.style.display = 'none';
+                return;
+            }
+
+            console.log("Renderizando contenido:", contentData);
+            
+            // Limpiar estado previo
+            statusMessage.style.display = 'block';
+            canvas.style.display = 'none';
+            if (slideInterval) clearInterval(slideInterval);
+            
+            // Configurar orientación
+            if (contentData.orientation === 'vertical') {
+                viewerContainer.classList.add('rotate-vertical');
+            } else {
+                viewerContainer.classList.remove('rotate-vertical');
+            }
+            
+            try {
+                statusMessage.textContent = `Cargando: ${contentData.name || 'contenido'}...`;
+                
+                // Priorizar downloadURL, fallback a filePath si es necesario
+                let pdfUrl = contentData.downloadURL;
+                if (!pdfUrl && contentData.filePath) {
+                    console.warn('downloadURL not found, attempting to use filePath');
+                    pdfUrl = contentData.filePath;
+                }
+                
+                console.log('Loading PDF from:', pdfUrl);
+                
+                if (pdfUrl.startsWith('https://firebasestorage.googleapis.com')) {
+                    // Firebase Storage URL - usar fetch
+                    const response = await fetch(pdfUrl);
+                    if (!response.ok) {
+                        throw new Error(`Error al descargar PDF: ${response.status}`);
+                    }
+                    const pdfArrayBuffer = await response.arrayBuffer();
+                    const loadingTask = pdfjsLib.getDocument(pdfArrayBuffer);
+                    pdfDoc = await loadingTask.promise;
+                } else {
+                    // URL directa - usar pdfjsLib directamente
+                    const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                    pdfDoc = await loadingTask.promise;
+                }
+                
+                console.log(`PDF cargado: ${pdfDoc.numPages} páginas`);
+                
+                canvas.style.display = 'block';
+                statusMessage.style.display = 'none';
+                
+                await renderPage(1);
+                
+                if (pdfDoc.numPages > 1 && contentData.slideDuration) {
+                    startSlideshow(contentData.slideDuration);
+                }
+                
+            } catch (error) {
+                console.error('Error al cargar el PDF:', error);
+                statusMessage.textContent = `Error al cargar el contenido: ${error.message}`;
+                canvas.style.display = 'none';
+            }
+        };
+
+        const listenForDeviceChanges = (deviceName) => {
+            statusMessage.textContent = `Verificando dispositivo "${deviceName}"...`;
+            
+            // GENERAR FINGERPRINT AL INICIO
+            deviceFingerprint = generateDeviceFingerprint();
+            console.log('Generated fingerprint:', deviceFingerprint);
+            
+            const deviceId = deviceName.toUpperCase();
+            
+            console.log("=== VERIFICACIÓN DE EMPAREJAMIENTO SEGURO ===");
+            console.log("Device name from URL:", deviceName);
+            console.log("Device ID (uppercase):", deviceId);
+            console.log("Device fingerprint:", deviceFingerprint);
+            
+            const deviceRef = doc(db, 'devices', deviceId);
+
+            let contentUnsubscribe = null;
+            
+            onSnapshot(deviceRef, (deviceSnap) => {
+                if (contentUnsubscribe) {
+                    contentUnsubscribe();
+                    contentUnsubscribe = null;
+                }
+                
+                if (slideInterval) {
+                    clearInterval(slideInterval);
+                    slideInterval = null;
+                }
+                
+                if (!deviceSnap.exists()) {
+                    statusMessage.textContent = `Dispositivo "${deviceName}" no encontrado.`;
+                    console.log("Device document does not exist:", deviceId);
+                    showPairingScreen(deviceId);
+                    return;
+                }
+                
+                console.log("Device found:", deviceSnap.data());
+                const deviceData = deviceSnap.data();
+                
+                // *** VERIFICACIÓN DE EMPAREJAMIENTO ***
+                if (!deviceData.paired) {
+                    console.log("Device is NOT paired. Showing pairing screen.");
+                    showPairingScreen(deviceId);
+                    return;
+                }
+                
+                // *** VERIFICACIÓN DE FINGERPRINT SEGURO ***
+                if (deviceData.fingerprint && deviceData.fingerprint !== deviceFingerprint) {
+                    console.log("FINGERPRINT MISMATCH - UNAUTHORIZED DEVICE");
+                    console.log("Expected:", deviceData.fingerprint);
+                    console.log("Current:", deviceFingerprint);
+                    showUnauthorizedScreen(deviceFingerprint, deviceData.fingerprint);
+                    return;
+                }
+                
+                console.log("Device IS paired and fingerprint matches. Proceeding to show content.");
+                hideUnauthorizedScreen();
+                hidePairingScreen();
+                
+                const contentId = deviceData.assignedContent;
+
+                if (!contentId) {
+                    statusMessage.textContent = 'Dispositivo autorizado. Asigna contenido desde el panel.';
+                    canvas.style.display = 'none';
+                    return;
+                }
+
+                console.log("Content assigned:", contentId);
+                const contentRef = doc(db, 'content', contentId);
+                
+                contentUnsubscribe = onSnapshot(contentRef, (contentSnap) => {
+                    if (contentSnap.exists()) {
+                        console.log("Content data:", contentSnap.data());
+                        renderContent(contentSnap.data());
+                    } else {
+                        statusMessage.textContent = 'El contenido asignado ya no existe.';
+                        console.log("Content document does not exist:", contentId);
+                    }
+                });
+            });
+        };
+
+        // --- INICIALIZAR APLICACIÓN ---
+        const deviceName = getDeviceNameFromURL();
+        if (deviceName) {
+            listenForDeviceChanges(deviceName);
+        } else {
+            statusMessage.textContent = 'Error: Nombre de dispositivo no especificado en la URL.';
+            deviceFingerprint = generateDeviceFingerprint();
+        }
+        
+    </script>
+</body>
+</html>

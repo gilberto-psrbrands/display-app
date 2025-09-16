@@ -21,6 +21,22 @@
             left: 50%;
             transform: translateX(-50%) translateY(-50%) rotate(90deg);
         }
+        #pairing-info {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            font-family: sans-serif;
+        }
+        .waiting-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
     </style>
 </head>
 <body class="flex items-center justify-center">
@@ -28,19 +44,35 @@
         <p id="status-message">Inicializando Dispositivo...</p>
         <canvas id="pdf-canvas"></canvas>
     </div>
+    
+    <!-- Pantalla de dispositivo en espera (no emparejado) -->
+    <div id="pairing-info" class="hidden">
+        <div class="waiting-animation">
+            <h1 class="text-4xl font-bold mb-4">Dispositivo en espera</h1>
+            <p class="text-xl mb-6">Este dispositivo requiere emparejamiento</p>
+            <div class="text-gray-400">
+                <p class="mb-2">Para emparejar este dispositivo:</p>
+                <p class="mb-1">1. Vaya al panel de administración</p>
+                <p class="mb-1">2. Genere un código de emparejamiento</p>
+                <p class="mb-4">3. Visite: <span class="text-cyan-400">tvdisplay-f1e87.web.app/tv-pair.html</span></p>
+            </div>
+            <p id="device-id-display" class="text-sm text-gray-500 mt-8"></p>
+        </div>
+    </div>
+    
     <div id="project-id-display-display"></div>
 
     <script type="module">
         // --- Conexión con Firebase ---
         const firebaseConfig = {
-  apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
-  authDomain: "tvdisplay-f1e87.firebaseapp.com",
-  projectId: "tvdisplay-f1e87",
-  storageBucket: "tvdisplay-f1e87.firebasestorage.app",
-  messagingSenderId: "815986988801",
-  appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
-  measurementId: "G-TDD6C4V757"
-};
+            apiKey: "AIzaSyAwP62TA2PjU4_0epGzZHMZedQdz3Bw2ZY",
+            authDomain: "tvdisplay-f1e87.firebaseapp.com",
+            projectId: "tvdisplay-f1e87",
+            storageBucket: "tvdisplay-f1e87.firebasestorage.app",
+            messagingSenderId: "815986988801",
+            appId: "1:815986988801:web:8f9ac3accc7ded14d92d00",
+            measurementId: "G-TDD6C4V757"
+        };
         
         // --- Inicialización de Servicios ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -57,6 +89,8 @@
         const canvas = document.getElementById('pdf-canvas');
         const ctx = canvas.getContext('2d');
         const projectIdDisplay = document.getElementById('project-id-display-display');
+        const pairingInfo = document.getElementById('pairing-info');
+        const deviceIdDisplay = document.getElementById('device-id-display');
 
         let pdfDoc = null;
         let currentPage = 1;
@@ -67,6 +101,37 @@
         const getDeviceNameFromURL = () => {
             const params = new URLSearchParams(window.location.search);
             return params.get('device');
+        };
+
+        const showPairingScreen = (deviceId) => {
+            console.log("=== SWITCHING TO PAIRING SCREEN ===");
+            
+            // Limpiar todo el contenido anterior
+            if (slideInterval) {
+                clearInterval(slideInterval);
+                slideInterval = null;
+            }
+            
+            // Limpiar canvas
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            canvas.style.display = 'none';
+            
+            // Resetear PDF
+            pdfDoc = null;
+            currentPage = 1;
+            
+            // Ocultar viewer y mostrar pantalla de emparejamiento
+            viewerContainer.style.display = 'none';
+            pairingInfo.classList.remove('hidden');
+            deviceIdDisplay.textContent = `Dispositivo: ${deviceId}`;
+        };
+
+        const hidePairingScreen = () => {
+            // Mostrar viewer y ocultar pantalla de emparejamiento
+            pairingInfo.classList.add('hidden');
+            viewerContainer.style.display = 'flex';
         };
 
         const renderPage = async (num) => {
@@ -121,7 +186,6 @@
                     throw new Error('No se encontró downloadURL en el contenido');
                 }
                 
-                // SOLUCIÓN ALTERNATIVA: Usar downloadURL directamente en lugar de Cloud Function
                 statusMessage.textContent = 'Descargando PDF...';
                 console.log('Downloading PDF from:', contentData.downloadURL);
                 
@@ -150,12 +214,13 @@
         };
 
         const listenForDeviceChanges = (deviceName) => {
-            statusMessage.textContent = `Buscando configuración para "${deviceName}"...`;
+            statusMessage.textContent = `Verificando dispositivo "${deviceName}"...`;
             
             // CORRECCIÓN: Convertir a mayúsculas para buscar en Firebase
             const deviceId = deviceName.toUpperCase();
             
             // Agregar diagnóstico para debug
+            console.log("=== VERIFICACIÓN DE EMPAREJAMIENTO ===");
             console.log("Device name from URL:", deviceName);
             console.log("Device ID (uppercase):", deviceId);
             
@@ -163,17 +228,30 @@
 
             onSnapshot(deviceRef, (deviceSnap) => {
                 if (!deviceSnap.exists()) {
-                    statusMessage.textContent = `Dispositivo "${deviceName}" (buscado como "${deviceId}") no encontrado.`;
+                    statusMessage.textContent = `Dispositivo "${deviceName}" no encontrado.`;
                     console.log("Device document does not exist:", deviceId);
+                    showPairingScreen(deviceId);
                     return;
                 }
                 
                 console.log("Device found:", deviceSnap.data());
                 const deviceData = deviceSnap.data();
+                
+                // *** VERIFICACIÓN DE EMPAREJAMIENTO ***
+                if (!deviceData.paired) {
+                    console.log("Device is NOT paired. Showing pairing screen.");
+                    showPairingScreen(deviceId);
+                    return;
+                }
+                
+                console.log("Device IS paired. Proceeding to show content.");
+                hidePairingScreen();
+                
+                // Si está emparejado, proceder con la lógica normal
                 const contentId = deviceData.assignedContent;
 
                 if (!contentId) {
-                    statusMessage.textContent = 'Dispositivo en espera. Asigna contenido desde el panel.';
+                    statusMessage.textContent = 'Dispositivo emparejado. Asigna contenido desde el panel.';
                     if (slideInterval) clearInterval(slideInterval);
                     canvas.style.display = 'none';
                     return;
